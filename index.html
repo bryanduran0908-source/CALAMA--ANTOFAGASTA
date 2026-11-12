@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corte y Repo · Calama y Antofagasta</title>
+<link rel="icon" href="logo.webp">
+<style>
+:root{--naranja:#f7931e;--azul:#14213d;--fondo:#f3f5f9;--borde:#e2e6ee;--texto:#1d2433;--suave:#6b7488}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Segoe UI",system-ui,sans-serif;background:var(--fondo);color:var(--texto)}
+header{background:var(--azul);padding:18px 16px 70px;text-align:center}
+header img{width:170px;max-width:45vw;background:#fff;border-radius:50%;padding:6px;box-shadow:0 6px 20px rgba(0,0,0,.3)}
+header h1.ciudad{color:var(--naranja);font-size:28px;font-weight:800;letter-spacing:2px}
+header h1{color:#fff;margin:12px 0 0;font-size:22px;font-weight:600}
+main{max-width:720px;margin:-50px auto 40px;padding:0 16px}
+.card{background:#fff;border-radius:16px;box-shadow:0 8px 30px rgba(20,33,61,.12);padding:22px}
+label{font-weight:600;display:block;margin-bottom:8px}
+.fila{display:flex;gap:10px}
+input{flex:1;min-width:0;font-size:20px;padding:14px 16px;border:2px solid var(--borde);border-radius:12px;outline:none;letter-spacing:1px}
+input:focus{border-color:var(--naranja)}
+button{background:var(--naranja);color:#fff;border:0;border-radius:12px;font-size:18px;font-weight:700;padding:0 26px;cursor:pointer}
+button:hover{filter:brightness(.95)}button:disabled{opacity:.5;cursor:wait}
+.ayuda{color:var(--suave);font-size:14px;margin-top:10px}
+.res{margin-top:18px}
+.item{border:1px solid var(--borde);border-left:6px solid var(--naranja);border-radius:12px;padding:16px;margin-bottom:14px;background:#fff}
+.item h2{margin:0 0 10px;font-size:19px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 18px}
+.dato small{display:block;color:var(--suave);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+.dato span{font-size:16px;font-weight:500;word-break:break-word}
+.mapa{display:inline-flex;align-items:center;gap:8px;margin-top:14px;background:var(--azul);color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:600}
+.mapa:hover{background:#22345f}
+iframe{width:100%;height:260px;border:0;border-radius:10px;margin-top:12px}
+.aviso{padding:14px;border-radius:12px;background:#fff4e5;color:#8a4b00}
+.aviso.error{background:#fdecec;color:#a11}
+</style>
+</head>
+<body>
+<header>
+  <img src="logo.webp" alt="Corte y Repo">
+  <h1 class="ciudad">CALAMA Y ANTOFAGASTA</h1>
+  <h1>Buscador de ubicación por N° de serie</h1>
+</header>
+<main>
+  <div class="card" id="login">
+    <form id="fl">
+      <label for="pw">Contraseña de acceso</label>
+      <div class="fila">
+        <input id="pw" type="password" autocomplete="current-password" placeholder="Ingresa la contraseña" autofocus>
+        <button id="bl">Entrar</button>
+      </div>
+      <div class="ayuda" id="msg">Esta página está protegida.</div>
+    </form>
+  </div>
+  <div class="card" id="app" hidden>
+    <form id="f">
+      <label for="q">Número de serie del medidor</label>
+      <div class="fila">
+        <input id="q" inputmode="numeric" autocomplete="off" placeholder="Ej: 3984959">
+        <button id="b" disabled>Cargando…</button>
+      </div>
+      <div class="ayuda" id="estado">Cargando base de datos, espera unos segundos…</div>
+    </form>
+    <div class="res" id="res"></div>
+  </div>
+</main>
+<script>
+async function abrir(pw){
+  const buf=new Uint8Array(await (await fetch('datos.bin')).arrayBuffer());
+  const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);
+  const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt:buf.slice(0,16),iterations:250000,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['decrypt']);
+  const gz=await crypto.subtle.decrypt({name:'AES-GCM',iv:buf.slice(16,28)},key,buf.slice(28));
+  const txt=await new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+  const o=JSON.parse(txt); window.TAB=o.TAB; window.FILAS=o.FILAS;
+}
+document.getElementById('fl').onsubmit=async e=>{
+  e.preventDefault();
+  const bl=document.getElementById('bl'),msg=document.getElementById('msg');
+  bl.disabled=true; msg.textContent='Verificando y cargando datos…';
+  try{ await abrir(document.getElementById('pw').value); }
+  catch(err){ bl.disabled=false; msg.textContent='Contraseña incorrecta. Intenta de nuevo.'; return; }
+  document.getElementById('login').hidden=true; document.getElementById('app').hidden=false;
+  iniciar(); document.getElementById('q').focus();
+};
+</script>
+<script>
+function iniciar(){
+const idx = new Map();
+const T = window.TAB;
+for (const r of window.FILAS) { const k = r[0]; (idx.get(k) || idx.set(k, []).get(k)).push(r); }
+const b = document.getElementById('b'), q = document.getElementById('q'), res = document.getElementById('res');
+b.disabled = false; b.textContent = 'Buscar';
+document.getElementById('estado').textContent = idx.size.toLocaleString('es-CL') + ' medidores cargados. Escribe la serie y presiona Buscar.';
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const dato = (t, v) => v ? `<div class="dato"><small>${t}</small><span>${esc(v)}</span></div>` : '';
+document.getElementById('f').onsubmit = e => {
+  e.preventDefault();
+  const s = q.value.replace(/\D/g, '').replace(/^0+/, '');
+  if (!s) { res.innerHTML = '<div class="aviso">Ingresa un número de serie.</div>'; return; }
+  const hits = idx.get(s);
+  if (!hits) { res.innerHTML = `<div class="aviso error">No se encontró la serie <b>${esc(s)}</b>. Revisa el número.</div>`; return; }
+  res.innerHTML = hits.map(r => {
+    const [serie, zona, dir, poste, inst, tar, marca, nota, fecha, lat, lon] = r;
+    const ok = lat && lon;
+    const url = `https://www.google.com/maps?q=${lat},${lon}`;
+    return `<div class="item">
+      <h2>Serie ${esc(serie)}</h2>
+      <div class="grid">
+        ${dato('Zona', T.z[zona])}${dato('Dirección', dir)}${dato('Instalación', inst)}
+        ${dato('Poste', poste!=='0'&&poste)}${dato('Tarifa', T.t[tar])}${dato('Marca', T.m[marca])}
+        ${dato('Nota de lectura', T.n[nota])}${dato('Última lectura', fecha)}${dato('Coordenadas', ok ? lat + ', ' + lon : 'Sin coordenadas')}
+      </div>
+      ${ok ? `<a class="mapa" href="${url}" target="_blank" rel="noopener">📍 Abrir en Google Maps</a>
+      <iframe loading="lazy" src="https://maps.google.com/maps?q=${lat},${lon}&z=17&output=embed"></iframe>` : ''}
+    </div>`;
+  }).join('');
+};
+}
+</script>
+</body>
+</html>
